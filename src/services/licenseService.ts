@@ -8,9 +8,14 @@ import {
   deleteDoc,
   onSnapshot,
 } from 'firebase/firestore';
-import { db } from '../config/firebase';
+import { ref, set, update, remove } from 'firebase/database';
+import { db, rtdb } from '../config/firebase';
 import { ClinicLicense, LicenseStatus, DeveloperSettings } from '../types/license';
 import { generateLicenseKey, decodeLicensePayload } from './cryptoService';
+
+export function encodeRtdbKey(key: string): string {
+  return key.trim().replace(/\./g, '~');
+}
 
 const COLLECTION_NAME = 'licenses';
 const LOCAL_STORAGE_KEY = 'dental_hms_admin_clinics_cache';
@@ -141,6 +146,16 @@ export const licenseService = {
     const docRef = doc(db, COLLECTION_NAME, key);
     await setDoc(docRef, newClinic);
 
+    // Mirror to Firebase Realtime Database (RTDB - Solution C Mode 1)
+    if (rtdb) {
+      try {
+        const rtdbKey = encodeRtdbKey(key);
+        await set(ref(rtdb, `licenses/${rtdbKey}`), newClinic);
+      } catch (rtdbErr) {
+        console.warn('[RTDB Mirror] Failed to mirror createClinic:', rtdbErr);
+      }
+    }
+
     const list = getCachedClinics();
     list.unshift(newClinic);
     saveCachedClinics(list);
@@ -203,6 +218,16 @@ export const licenseService = {
     const docRef = doc(db, COLLECTION_NAME, cleanKey);
     await setDoc(docRef, clinic);
 
+    // Mirror to Firebase Realtime Database (RTDB - Solution C Mode 1)
+    if (rtdb) {
+      try {
+        const rtdbKey = encodeRtdbKey(cleanKey);
+        await set(ref(rtdb, `licenses/${rtdbKey}`), clinic);
+      } catch (rtdbErr) {
+        console.warn('[RTDB Mirror] Failed to mirror importExistingLicense:', rtdbErr);
+      }
+    }
+
     const list = getCachedClinics();
     list.unshift(clinic);
     saveCachedClinics(list);
@@ -216,6 +241,16 @@ export const licenseService = {
   updateStatus: async (licenseKey: string, status: LicenseStatus): Promise<void> => {
     const docRef = doc(db, COLLECTION_NAME, licenseKey);
     await updateDoc(docRef, { status });
+
+    // Mirror to Firebase Realtime Database (RTDB - Solution C Mode 1)
+    if (rtdb) {
+      try {
+        const rtdbKey = encodeRtdbKey(licenseKey);
+        await update(ref(rtdb, `licenses/${rtdbKey}`), { status });
+      } catch (rtdbErr) {
+        console.warn('[RTDB Mirror] Failed to mirror updateStatus:', rtdbErr);
+      }
+    }
 
     const list = getCachedClinics().map((c) =>
       c.licenseKey === licenseKey ? { ...c, status } : c
@@ -382,6 +417,16 @@ export const licenseService = {
 
     if (Object.keys(sanitizedSettings).length > 0) {
       await setDoc(docRef, { developerSettings: sanitizedSettings }, { merge: true });
+
+      // Mirror to Firebase Realtime Database (RTDB - Solution C Mode 1)
+      if (rtdb) {
+        try {
+          const rtdbKey = encodeRtdbKey(licenseKey);
+          await update(ref(rtdb, `licenses/${rtdbKey}/developerSettings`), sanitizedSettings);
+        } catch (rtdbErr) {
+          console.warn('[RTDB Mirror] Failed to mirror devSettings to RTDB:', rtdbErr);
+        }
+      }
     }
 
     const list = getCachedClinics().map((c) =>
@@ -428,6 +473,15 @@ export const licenseService = {
       { merge: true }
     );
 
+    if (rtdb) {
+      try {
+        const rtdbKey = encodeRtdbKey(licenseKey);
+        await update(ref(rtdb, `licenses/${rtdbKey}/developerSettings`), { directorPasswordReset: resetPayload });
+      } catch (rtdbErr) {
+        console.warn('[RTDB Mirror] Failed to mirror reset password to RTDB:', rtdbErr);
+      }
+    }
+
     const list = getCachedClinics().map((c) =>
       c.licenseKey === licenseKey
         ? {
@@ -447,8 +501,9 @@ export const licenseService = {
    */
   deleteLicense: async (licenseKey: string): Promise<void> => {
     const cleanKey = licenseKey.trim();
+    const rtdbKey = encodeRtdbKey(cleanKey);
 
-    // 1. Record in 'revoked_licenses' collection in Firestore
+    // 1. Record in 'revoked_licenses' collection in Firestore & RTDB
     try {
       const revokedDocRef = doc(db, 'revoked_licenses', cleanKey);
       await setDoc(revokedDocRef, {
@@ -457,14 +512,24 @@ export const licenseService = {
         revokedAt: new Date().toISOString(),
         reason: 'Permanently deleted by software vendor',
       });
+      if (rtdb) {
+        await set(ref(rtdb, `revoked_licenses/${rtdbKey}`), {
+          licenseKey: cleanKey,
+          status: 'REVOKED',
+          revokedAt: new Date().toISOString(),
+        });
+      }
     } catch (err) {
       console.error('Error recording to revoked_licenses:', err);
     }
 
-    // 2. Remove document from active 'licenses' collection
+    // 2. Remove document from active 'licenses' collection in Firestore & RTDB
     try {
       const docRef = doc(db, COLLECTION_NAME, cleanKey);
       await deleteDoc(docRef);
+      if (rtdb) {
+        await remove(ref(rtdb, `licenses/${rtdbKey}`));
+      }
     } catch (err) {
       console.error('Error removing document from licenses:', err);
     }
