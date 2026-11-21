@@ -450,33 +450,40 @@ export const licenseService = {
   },
 
   /**
-   * Trigger Remote Emergency Primary Director Password Reset in Firestore
+   * Trigger Remote Emergency Primary Director Password Reset in Firestore & RTDB
    */
   triggerDirectorPasswordReset: async (
     licenseKey: string,
     newPassword: string
   ): Promise<void> => {
+    const cleanPass = newPassword.trim();
     const resetPayload = {
       status: 'PENDING' as const,
-      newPassword: newPassword.trim(),
+      newPassword: cleanPass,
       requestedAt: new Date().toISOString(),
     };
 
     const docRef = doc(db, COLLECTION_NAME, licenseKey);
-    await setDoc(
-      docRef,
-      {
-        developerSettings: {
-          directorPasswordReset: resetPayload,
+    try {
+      await updateDoc(docRef, {
+        'developerSettings.directorPasswordReset': resetPayload,
+      });
+    } catch {
+      await setDoc(
+        docRef,
+        {
+          developerSettings: {
+            directorPasswordReset: resetPayload,
+          },
         },
-      },
-      { merge: true }
-    );
+        { merge: true }
+      );
+    }
 
     if (rtdb) {
       try {
         const rtdbKey = encodeRtdbKey(licenseKey);
-        await update(ref(rtdb, `licenses/${rtdbKey}/developerSettings`), { directorPasswordReset: resetPayload });
+        await set(ref(rtdb, `licenses/${rtdbKey}/developerSettings/directorPasswordReset`), resetPayload);
       } catch (rtdbErr) {
         console.warn('[RTDB Mirror] Failed to mirror reset password to RTDB:', rtdbErr);
       }
