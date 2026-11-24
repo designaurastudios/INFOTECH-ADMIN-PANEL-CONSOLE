@@ -115,6 +115,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigateToFinanc
       statusFilter === 'ALL' || c.status === statusFilter;
 
     return matchesSearch && matchesStatus;
+  }).sort((a, b) => {
+    const timeA = a.createdAt ? Date.parse(a.createdAt) : Date.parse(a.issuedAt || a.setupDate || '1970-01-01');
+    const timeB = b.createdAt ? Date.parse(b.createdAt) : Date.parse(b.issuedAt || b.setupDate || '1970-01-01');
+    return (Number.isNaN(timeB) ? 0 : timeB) - (Number.isNaN(timeA) ? 0 : timeA);
   });
 
   return (

@@ -95,11 +95,11 @@ export const CreateLicenseModal: React.FC<CreateLicenseModalProps> = ({
     const isMedflow = category.toLowerCase().includes('medflow');
     const isDental = category.toLowerCase().includes('dental');
     if (isMedflow && normalizedMid.startsWith('DHMS-')) {
-      alert('Machine ID mismatch: Medflow HMS uses an "MFMS-..." Machine ID. Please check the Machine ID from the Medflow HMS Server screen.');
+      alert('Category Mismatch: You entered a Dental HMS Machine ID ("DHMS-..."), but the selected Software Category is "' + category + '". Please select "DENTAL HMS" in the Software Category dropdown.');
       return;
     }
     if (isDental && normalizedMid.startsWith('MFMS-')) {
-      alert('Machine ID mismatch: Dental HMS uses a "DHMS-..." Machine ID. Please check the Machine ID from the Dental HMS Server screen.');
+      alert('Category Mismatch: You entered a Medflow HMS Machine ID ("MFMS-..."), but the selected Software Category is "' + category + '". Please select or add "MEDFLOW HMS" in the Software Category dropdown above.');
       return;
     }
 
@@ -437,7 +437,18 @@ export const CreateLicenseModal: React.FC<CreateLicenseModalProps> = ({
                   placeholder={category.toLowerCase().includes('medflow') ? 'MFMS-XXXX-XXXX-XXXX-XXXX' : 'DHMS-XXXX-XXXX-XXXX-XXXX'}
                   className="form-input font-mono"
                   value={machineId}
-                  onChange={(e) => setMachineId(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setMachineId(val);
+                    const upper = val.trim().toUpperCase();
+                    if (upper.startsWith('MFMS-')) {
+                      const medflowCat = categories.find((c) => c.toUpperCase().includes('MEDFLOW'));
+                      if (medflowCat) setCategory(medflowCat);
+                    } else if (upper.startsWith('DHMS-')) {
+                      const dentalCat = categories.find((c) => c.toUpperCase().includes('DENTAL'));
+                      if (dentalCat) setCategory(dentalCat);
+                    }
+                  }}
                 />
                 <span className="form-hint">
                   Client provides this Machine ID from their {category || 'HMS'} Server activation screen.

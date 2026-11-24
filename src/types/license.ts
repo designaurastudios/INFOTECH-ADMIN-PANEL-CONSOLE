@@ -33,6 +33,7 @@ export interface ClinicLicense {
   machineId: string;
   computerName?: string;
   issuedAt: string;
+  createdAt?: string;
   lastSeenAt?: string;
   amcStatus: '1st_Year_Free' | 'Renewed' | 'Not_Active';
   developerSettings: DeveloperSettings;

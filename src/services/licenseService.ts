@@ -78,6 +78,16 @@ function saveCachedClinics(clinics: ClinicLicense[]): void {
   }
 }
 
+function sortClinicsNewestFirst(list: ClinicLicense[]): ClinicLicense[] {
+  return [...list].sort((a, b) => {
+    const timeA = a.createdAt ? Date.parse(a.createdAt) : Date.parse(a.issuedAt || a.setupDate || '1970-01-01');
+    const timeB = b.createdAt ? Date.parse(b.createdAt) : Date.parse(b.issuedAt || b.setupDate || '1970-01-01');
+    const validA = Number.isNaN(timeA) ? 0 : timeA;
+    const validB = Number.isNaN(timeB) ? 0 : timeB;
+    return validB - validA;
+  });
+}
+
 export const licenseService = {
   /**
    * Subscribe to realtime clinics list from Firestore
@@ -86,7 +96,7 @@ export const licenseService = {
     // Emit local cache immediately for instant UI
     const cached = getCachedClinics();
     if (cached.length > 0) {
-      callback(cached);
+      callback(sortClinicsNewestFirst(cached));
     }
 
     try {
@@ -99,8 +109,9 @@ export const licenseService = {
             if (d.id.startsWith('__')) return; // Ignore internal system docs (e.g. __company_ledger__)
             list.push({ ...(d.data() as ClinicLicense), id: d.id });
           });
-          callback(list);
-          saveCachedClinics(list);
+          const sorted = sortClinicsNewestFirst(list);
+          callback(sorted);
+          saveCachedClinics(sorted);
         },
         (error) => {
           console.error('[Firebase Firestore] Error fetching licenses:', error);
@@ -148,6 +159,7 @@ export const licenseService = {
       planType: 'LIFETIME',
       machineId: data.machineId.trim().toUpperCase(),
       issuedAt: today,
+      createdAt: new Date().toISOString(),
       lastSeenAt: 'Never connected yet',
       amcStatus: '1st_Year_Free',
       developerSettings: {
@@ -221,6 +233,7 @@ export const licenseService = {
       planType: payload.planType,
       machineId: payload.machineId,
       issuedAt: payload.issuedAt,
+      createdAt: new Date().toISOString(),
       lastSeenAt: 'Imported from existing installation',
       amcStatus: '1st_Year_Free',
       developerSettings: {
