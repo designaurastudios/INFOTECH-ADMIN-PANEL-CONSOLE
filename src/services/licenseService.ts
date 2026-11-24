@@ -23,12 +23,29 @@ const SETTINGS_COLLECTION = 'system_settings';
 const CATEGORIES_DOC_ID = 'categories';
 const CATEGORIES_STORAGE_KEY = 'dental_hms_admin_categories_cache';
 
-export const DEFAULT_CATEGORIES = ['Dental HMS', 'General OPD HMS', 'Ayurved HMS'];
+export const DEFAULT_CATEGORIES = ['DENTAL HMS'];
+
+function normalizeAndDedupeCategories(list: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of list) {
+    if (typeof item !== 'string') continue;
+    const upper = item.trim().toUpperCase();
+    if (upper && !seen.has(upper)) {
+      seen.add(upper);
+      result.push(upper);
+    }
+  }
+  if (!seen.has('DENTAL HMS')) {
+    result.unshift('DENTAL HMS');
+  }
+  return result;
+}
 
 function getCachedCategories(): string[] {
   try {
     const raw = localStorage.getItem(CATEGORIES_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) return normalizeAndDedupeCategories(JSON.parse(raw));
   } catch {
     // fallback
   }
@@ -112,7 +129,7 @@ export const licenseService = {
     setupDate?: string;
     notes?: string;
   }): Promise<ClinicLicense> => {
-    const key = await generateLicenseKey(data.clinicName, data.machineId, 'LIFETIME');
+    const key = await generateLicenseKey(data.clinicName, data.machineId, 'LIFETIME', data.category);
 
     const today = new Date().toISOString().split('T')[0];
     const newClinic: ClinicLicense = {
@@ -125,7 +142,7 @@ export const licenseService = {
       clinicEmail: data.clinicEmail ? data.clinicEmail.trim() : '',
       softwareCost: data.softwareCost !== undefined && data.softwareCost !== '' ? data.softwareCost : '',
       paymentStatus: data.paymentStatus || 'PAID',
-      category: data.category?.trim() || 'Dental HMS',
+      category: (data.category?.trim() || 'DENTAL HMS').toUpperCase(),
       setupDate: data.setupDate?.trim() || today,
       status: 'ACTIVE',
       planType: 'LIFETIME',
@@ -182,11 +199,12 @@ export const licenseService = {
   ): Promise<ClinicLicense> => {
     const payload = decodeLicensePayload(licenseKey);
     if (!payload) {
-      throw new Error('Invalid license key format. Must start with DHMS-LIC.');
+      throw new Error('Invalid license key format. Must start with DHMS-LIC or MEDFLOW-LIC.');
     }
 
     const today = new Date().toISOString().split('T')[0];
     const cleanKey = licenseKey.trim();
+    const inferredCategory = cleanKey.startsWith('MEDFLOW-LIC') ? 'MEDFLOW HMS' : 'DENTAL HMS';
     const clinic: ClinicLicense = {
       id: cleanKey,
       licenseKey: cleanKey,
@@ -197,7 +215,7 @@ export const licenseService = {
       clinicEmail: details?.clinicEmail?.trim() || '',
       softwareCost: details?.softwareCost !== undefined && details?.softwareCost !== '' ? details?.softwareCost : '',
       paymentStatus: details?.paymentStatus || 'PAID',
-      category: details?.category?.trim() || 'Dental HMS',
+      category: (details?.category?.trim() || inferredCategory).toUpperCase(),
       setupDate: details?.setupDate?.trim() || payload.issuedAt || today,
       status: 'ACTIVE',
       planType: payload.planType,
@@ -347,8 +365,13 @@ export const licenseService = {
       if (snapshot.exists()) {
         const data = snapshot.data();
         if (Array.isArray(data?.list) && data.list.length > 0) {
-          saveCachedCategories(data.list);
-          return data.list;
+          const normalized = normalizeAndDedupeCategories(data.list);
+          saveCachedCategories(normalized);
+          // If Firestore still had lowercase or duplicate entries, clean it in Firestore automatically
+          if (JSON.stringify(normalized) !== JSON.stringify(data.list)) {
+            setDoc(docRef, { list: normalized, updatedAt: new Date().toISOString() }, { merge: true }).catch(() => {});
+          }
+          return normalized;
         }
       }
     } catch (err) {
@@ -358,18 +381,18 @@ export const licenseService = {
   },
 
   /**
-   * Add a new category dynamically and save to Firestore & Local Cache
+   * Add a new category dynamically (forced UPPERCASE, deduplicated) and save to Firestore & Local Cache
    */
   addCategory: async (newCategory: string): Promise<string[]> => {
-    const clean = newCategory.trim();
+    const clean = newCategory.trim().toUpperCase();
     if (!clean) return getCachedCategories();
 
     const current = await licenseService.getCategories();
-    const exists = current.some((c) => c.toLowerCase() === clean.toLowerCase());
+    const exists = current.some((c) => c.trim().toUpperCase() === clean);
     if (exists) return current;
 
-    // Newly added category shows first
-    const updated = [clean, ...current.filter((c) => c.toLowerCase() !== clean.toLowerCase())];
+    // Newly added category shows first, normalized & deduplicated
+    const updated = normalizeAndDedupeCategories([clean, ...current]);
     saveCachedCategories(updated);
 
     try {

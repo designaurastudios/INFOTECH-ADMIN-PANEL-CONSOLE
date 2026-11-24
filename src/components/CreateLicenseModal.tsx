@@ -17,7 +17,7 @@ export const CreateLicenseModal: React.FC<CreateLicenseModalProps> = ({
 
   // Dynamic Categories & Setup Date
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
-  const [category, setCategory] = useState<string>('Dental HMS');
+  const [category, setCategory] = useState<string>('DENTAL HMS');
   const [showAddCategory, setShowAddCategory] = useState<boolean>(false);
   const [newCategoryName, setNewCategoryName] = useState<string>('');
   const [addingCategory, setAddingCategory] = useState<boolean>(false);
@@ -65,7 +65,7 @@ export const CreateLicenseModal: React.FC<CreateLicenseModalProps> = ({
   }, []);
 
   const handleAddNewCategory = async () => {
-    const clean = newCategoryName.trim();
+    const clean = newCategoryName.trim().toUpperCase();
     if (!clean) return;
     setAddingCategory(true);
     try {
@@ -88,6 +88,18 @@ export const CreateLicenseModal: React.FC<CreateLicenseModalProps> = ({
     e.preventDefault();
     if (!clinicName.trim() || !doctorName.trim() || !machineId.trim()) {
       alert('Please fill in Clinic Name, Doctor Name, and Server Machine ID.');
+      return;
+    }
+
+    const normalizedMid = machineId.trim().toUpperCase();
+    const isMedflow = category.toLowerCase().includes('medflow');
+    const isDental = category.toLowerCase().includes('dental');
+    if (isMedflow && normalizedMid.startsWith('DHMS-')) {
+      alert('Machine ID mismatch: Medflow HMS uses an "MFMS-..." Machine ID. Please check the Machine ID from the Medflow HMS Server screen.');
+      return;
+    }
+    if (isDental && normalizedMid.startsWith('MFMS-')) {
+      alert('Machine ID mismatch: Dental HMS uses a "DHMS-..." Machine ID. Please check the Machine ID from the Dental HMS Server screen.');
       return;
     }
 
@@ -118,7 +130,7 @@ export const CreateLicenseModal: React.FC<CreateLicenseModalProps> = ({
   const handleImportExisting = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!decodedImportPayload) {
-      alert('Please paste a valid license key starting with DHMS-LIC.');
+      alert('Please paste a valid license key starting with DHMS-LIC or MEDFLOW-LIC.');
       return;
     }
 
@@ -366,10 +378,11 @@ export const CreateLicenseModal: React.FC<CreateLicenseModalProps> = ({
                       <input
                         type="text"
                         autoFocus
-                        placeholder="e.g. Ayurved HMS"
+                        placeholder="e.g. MEDFLOW HMS"
                         className="form-input"
+                        style={{ textTransform: 'uppercase' }}
                         value={newCategoryName}
-                        onChange={(e) => setNewCategoryName(e.target.value)}
+                        onChange={(e) => setNewCategoryName(e.target.value.toUpperCase())}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
@@ -394,7 +407,7 @@ export const CreateLicenseModal: React.FC<CreateLicenseModalProps> = ({
                       </button>
                     </div>
                   )}
-                  <span className="form-hint">Supports Dental HMS, General OPD HMS, Ayurved HMS, etc.</span>
+                  <span className="form-hint">Default: DENTAL HMS. New categories are saved in UPPERCASE in Firebase.</span>
                 </div>
 
                 <div>
@@ -421,7 +434,7 @@ export const CreateLicenseModal: React.FC<CreateLicenseModalProps> = ({
                 <input
                   type="text"
                   required
-                  placeholder="DHMS-XXXX-XXXX-XXXX-XXXX"
+                  placeholder={category.toLowerCase().includes('medflow') ? 'MFMS-XXXX-XXXX-XXXX-XXXX' : 'DHMS-XXXX-XXXX-XXXX-XXXX'}
                   className="form-input font-mono"
                   value={machineId}
                   onChange={(e) => setMachineId(e.target.value)}

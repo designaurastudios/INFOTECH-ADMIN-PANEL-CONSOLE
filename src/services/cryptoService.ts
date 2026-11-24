@@ -17,13 +17,45 @@ function base64UrlEncode(str: string): string {
 }
 
 /**
+ * Determine the license key prefix for a given software category / machine ID.
+ * Future-proof: automatically derives <PREFIX>-LIC for any new product Machine ID (e.g. MFMS- -> MEDFLOW-LIC, AYUR- -> AYUR-LIC).
+ */
+export function getLicensePrefix(category?: string, machineId?: string): string {
+  const cat = (category || '').trim().toUpperCase();
+  const mid = (machineId || '').trim().toUpperCase();
+
+  // 1. Known explicit mappings
+  if (cat.includes('MEDFLOW') || mid.startsWith('MFMS-')) {
+    return 'MEDFLOW-LIC';
+  }
+  if (cat.includes('DENTAL') || mid.startsWith('DHMS-')) {
+    return 'DHMS-LIC';
+  }
+
+  // 2. Dynamic prefix from Machine ID for any future product (e.g. AYUR-XXXX-... -> AYUR-LIC)
+  const midPrefixMatch = mid.match(/^([A-Z0-9]{2,10})-/);
+  if (midPrefixMatch) {
+    return `${midPrefixMatch[1]}-LIC`;
+  }
+
+  // 3. Fallback from category name (e.g. "AYURVED HMS" -> "AYURVED-LIC")
+  const catPrefix = cat.replace(/[^A-Z0-9]/g, '').slice(0, 8);
+  if (catPrefix) {
+    return `${catPrefix}-LIC`;
+  }
+
+  return 'DHMS-LIC';
+}
+
+/**
  * Generate a cryptographically signed Lifetime License Key in the browser.
- * Uses Web Crypto API (HMAC-SHA256) matching the Dental HMS backend verification.
+ * Uses Web Crypto API (HMAC-SHA256) matching the HMS backend verification.
  */
 export async function generateLicenseKey(
   clinicName: string,
   machineId: string,
-  planType: 'LIFETIME' | 'TRIAL' = 'LIFETIME'
+  planType: 'LIFETIME' | 'TRIAL' = 'LIFETIME',
+  category?: string
 ): Promise<string> {
   const normalizedMid = machineId.trim().toUpperCase();
   const cleanClinic = clinicName.trim();
@@ -58,8 +90,9 @@ export async function generateLicenseKey(
 
   const fullSigHex = bufferToHex(signatureBuffer);
   const signature32 = fullSigHex.slice(0, 32);
+  const prefix = getLicensePrefix(category, normalizedMid);
 
-  return `DHMS-LIC.${base64Payload}.${signature32}`;
+  return `${prefix}.${base64Payload}.${signature32}`;
 }
 
 /**
@@ -73,7 +106,7 @@ export function decodeLicensePayload(licenseKey: string): {
 } | null {
   try {
     const parts = licenseKey.trim().split('.');
-    if (parts.length !== 3 || parts[0] !== 'DHMS-LIC') return null;
+    if (parts.length !== 3 || !parts[0].endsWith('-LIC')) return null;
     const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
     const jsonStr = decodeURIComponent(
       atob(base64)
